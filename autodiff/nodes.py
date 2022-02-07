@@ -29,12 +29,18 @@ class Node():
     def __pow__(self, p):
         return Pow(self,to_node(p))
 
+def to_node(p):
+    if isinstance(p, Node):
+        return p
+    else:
+        return Const(p)
+
 class Const(Node):
     def __init__(self, number):
         self.value = Decimal(number.__str__())
 
     def eval(self, env):
-        return self.value
+        return float(self.value)
 
     def diff(self, var):
         return Const(0)
@@ -96,7 +102,37 @@ class Plus(Node):
     def simplify(self):
         self.left = self.left.simplify()
         self.right = self.right.simplify()
-        return simplify_Plus(self)
+        l = self.left
+        r = self.right
+        if type(l) == Const and type(r) == Const:
+            self = Const(l.eval({}) + r.eval({}))
+        if type(l) == Const and l.eval({}) == 0:
+            self = r
+        if type(r) == Const and r.eval({}) == 0:
+            self = l
+        if type(l) == Const:
+            if type(r) == Plus:
+                if type(r.left) == Const:
+                    self = Plus(Const(l.eval({})+r.left.eval({})), r.right)
+                if type(r.right) == Const:
+                    self = Plus(Const(l.eval({})+r.right.eval({})), r.left)
+            if type(r) == Minus:
+                if type(r.left) == Const:
+                    self = Minus(Const(l.eval({})+r.left.eval({})), r.right)
+                if type(r.right) == Const:
+                    self = Plus(Const(l.eval({})-r.right.eval({})), r.right)
+        if type(r) == Const:
+            if type(l) == Plus:
+                if type(l.left) == Const:
+                    self = Plus(Const(r.eval({})+l.left.eval({})), l.right)
+                if type(l.right) == Const:
+                    self = Plus(Const(r.eval({})+l.right.eval({})), l.left)
+            if type(l) == Minus:
+                if type(l.left) == Const:
+                    self = Minus(Const(r.eval({})+l.left.eval({})), l.right)
+                if type(l.right) == Const:
+                    self = Plus(Const(l.eval({})-l.right.eval({})), r.right)
+        return self
 
     def __str__(self):
         return f"{self.left.__str__()} + {self.right.__str__()}"
@@ -121,7 +157,37 @@ class Minus(Node):
     def simplify(self):
         self.left = self.left.simplify()
         self.right = self.right.simplify()
-        return simplify_minus(self)
+        l = self.left
+        r = self.right
+        if type(l) == Const and type(r) == Const:
+            self = Const(l.eval({}) - r.eval({}))
+        if type(l) == Const and l.eval({}) == 0:
+            self = Const(-r.eval({}))
+        if type(r) == Const and r.eval({}) == 0:
+            self = l
+        if type(l) == Const:
+            if type(r) == Plus:
+                if type(r.left) == Const:
+                    self = Minus(Const(l.eval({})-r.left.eval({})), r.right)
+                if type(r.right) == Const:
+                    self = Minus(Const(l.eval({})-r.right.eval({})), r.left)
+            if type(r) == Minus:
+                if type(r.left) == Const:
+                    self = Plus(Const(l.eval({})-r.left.eval({})), r.right)
+                if type(r.right) == Const:
+                    self = Minus(Const(l.eval({})+r.right.eval({})), r.right)
+        if type(r) == Const:
+            if type(l) == Plus:
+                if type(l.left) == Const:
+                    self = Minus(Const(r.eval({})-l.left.eval({})), l.right)
+                if type(l.right) == Const:
+                    self = Minus(Const(r.eval({})-l.right.eval({})), l.left)
+            if type(l) == Minus:
+                if type(l.left) == Const:
+                    self = Plus(Const(r.eval({})-l.left.eval({})), l.right)
+                if type(l.right) == Const:
+                    self = Minus(Const(l.eval({})+l.right.eval({})), r.right)
+        return self
 
     def __str__(self):
         return f"{self.left.__str__()} - {self.right.__str__()}"
@@ -154,7 +220,27 @@ class Multiply(Node):
     def simplify(self):
         self.left = self.left.simplify()
         self.right = self.right.simplify()
-        return simplify_multiply(self)
+        l = self.left
+        r = self.right
+        if type(l) == Const and type(r) == Const:
+            self = Const(l.eval({}) * l.eval({}))
+        if type(l) == Const and l.eval({}) == 0:
+            self = Const(0)
+        if type(r) == Const and r.eval({}) == 0:
+            self = Const(0)
+        if type(l) == Const:
+            if type(r) == Multiply:
+                if type(r.left) == Const:
+                    self = Multiply(Const(l.eval({})*r.left.eval({})), r.right)
+                if type(r.right) == Const:
+                    self = Multiply(Const(l.eval({})*r.right.eval({})), r.left)
+        if type(r) == Const:
+            if type(l) == Multiply:
+                if type(l.left) == Const:
+                    self = Multiply(Const(r.eval({})*l.left.eval({})), l.right)
+                if type(l.right) == Const:
+                    self = Multiply(Const(r.eval({})*l.right.eval({})), l.left)
+        return self
 
     def __str__(self):
         if type(self.left) == Plus or type(self.left) == Minus:
@@ -203,7 +289,13 @@ class Divide(Node):
     def simplify(self):
         self.left = self.left.simplify()
         self.right = self.right.simplify()
-        return simplify_divide(self)
+        l = self.left
+        r = self.right
+        if type(l) == Const and type(r) == Const:
+            self = Const(l.eval({}) / r.eval({}))
+        if type(l) == Const and l.eval({}) == 0:
+            self = Const(0)
+        return self
 
     def __str__(self):
         if type(self.left) == Const or type(self.left) == Variable:
@@ -241,14 +333,23 @@ class Pow(Node):
 
     def simplify(self):
         self.left = self.left.simplify()
-        return simplify_pow(self)
+        self.right = self.right
+        l = self.left
+        r = self.right
+        if type(l) == Const:
+            self = Const(math.pow(l.eval({}), r.eval({})))
+        if r.eval({}) == 1:
+            self = l
+        if r.eval({}) == 0:
+            self = Const(1)
+        return self
 
     def __str__(self):
         if type(self.left) == Const or type(self.left) == Variable:
             l = f"{self.left.__str__()}"
         else:
             l = f"({self.left.__str__()})"
-        return f"{l}^({self.right.__str__()})"
+        return f"{l}^{self.right.__str__()}"
 
     def to_latex(self):
         if type(self.left) == Const or type(self.left) == Variable:
@@ -257,120 +358,5 @@ class Pow(Node):
             l = f"({self.left.to_latex()})"
         return f"{l}^"+"{"+self.right.to_latex()+"}"
 
-def draw(node):
-    return "$"+fr"{node.to_latex()}"+"$"
-
-def to_node(p):
-    if isinstance(p, Node):
-        return p
-    else:
-        return Const(p)
-
-def simplify_Plus(node:Plus):
-    l = node.left
-    r = node.right
-    if type(l) == Const and type(r) == Const:
-        node = Const(l.eval({}) + r.eval({}))
-    if type(l) == Const and l.eval({}) == 0:
-        node = r
-    if type(r) == Const and r.eval({}) == 0:
-        node = l
-    if type(l) == Const:
-        if type(r) == Plus:
-            if type(r.left) == Const:
-                node = Plus(Const(l.eval({})+r.left.eval({})), r.right)
-            if type(r.right) == Const:
-                node = Plus(Const(l.eval({})+r.right.eval({})), r.left)
-        if type(r) == Minus:
-            if type(r.left) == Const:
-                node = Minus(Const(l.eval({})+r.left.eval({})), r.right)
-            if type(r.right) == Const:
-                node = Plus(Const(l.eval({})-r.right.eval({})), r.right)
-    if type(r) == Const:
-        if type(l) == Plus:
-            if type(l.left) == Const:
-                node = Plus(Const(r.eval({})+l.left.eval({})), l.right)
-            if type(l.right) == Const:
-                node = Plus(Const(r.eval({})+l.right.eval({})), l.left)
-        if type(l) == Minus:
-            if type(l.left) == Const:
-                node = Minus(Const(r.eval({})+l.left.eval({})), l.right)
-            if type(l.right) == Const:
-                node = Plus(Const(l.eval({})-l.right.eval({})), r.right)
-    return node
-
-def simplify_minus(node:Minus):
-    l = node.left
-    r = node.right
-    if type(l) == Const and type(r) == Const:
-        node = Const(l.eval({}) - r.eval({}))
-    if type(l) == Const and l.eval({}) == 0:
-        node = Const(-r.eval({}))
-    if type(r) == Const and r.eval({}) == 0:
-        node = l
-    if type(l) == Const:
-        if type(r) == Plus:
-            if type(r.left) == Const:
-                node = Minus(Const(l.eval({})-r.left.eval({})), r.right)
-            if type(r.right) == Const:
-                node = Minus(Const(l.eval({})-r.right.eval({})), r.left)
-        if type(r) == Minus:
-            if type(r.left) == Const:
-                node = Plus(Const(l.eval({})-r.left.eval({})), r.right)
-            if type(r.right) == Const:
-                node = Minus(Const(l.eval({})+r.right.eval({})), r.right)
-    if type(r) == Const:
-        if type(l) == Plus:
-            if type(l.left) == Const:
-                node = Minus(Const(r.eval({})-l.left.eval({})), l.right)
-            if type(l.right) == Const:
-                node = Minus(Const(r.eval({})-l.right.eval({})), l.left)
-        if type(l) == Minus:
-            if type(l.left) == Const:
-                node = Plus(Const(r.eval({})-l.left.eval({})), l.right)
-            if type(l.right) == Const:
-                node = Minus(Const(l.eval({})+l.right.eval({})), r.right)
-    return node
-
-def simplify_multiply(node:Multiply):
-    l = node.left
-    r = node.right
-    if type(l) == Const and type(r) == Const:
-        node = Const(l.eval({}) * l.eval({}))
-    if type(l) == Const and l.eval({}) == 0:
-        node = Const(0)
-    if type(r) == Const and r.eval({}) == 0:
-        node = Const(0)
-    if type(l) == Const:
-        if type(r) == Multiply:
-            if type(r.left) == Const:
-                node = Multiply(Const(l.eval({})*r.left.eval({})), r.right)
-            if type(r.right) == Const:
-                node = Multiply(Const(l.eval({})*r.right.eval({})), r.left)
-    if type(r) == Const:
-        if type(l) == Multiply:
-            if type(l.left) == Const:
-                node = Multiply(Const(r.eval({})*l.left.eval({})), l.right)
-            if type(l.right) == Const:
-                node = Multiply(Const(r.eval({})*l.right.eval({})), l.left)
-    return node
-
-def simplify_divide(node:Divide):
-    l = node.left
-    r = node.right
-    if type(l) == Const and type(r) == Const:
-        node = Const(l.eval({}) / r.eval({}))
-    if type(l) == Const and l.eval({}) == 0:
-        node = Const(0)
-    return node
-
-def simplify_pow(node:Pow):
-    l = node.left
-    r = node.right
-    if type(l) == Const:
-        node = Const(math.pow(l.eval({}), r.eval({})))
-    if r.eval({}) == 1:
-        node = l
-    if r.eval({}) == 0:
-        node = Const(1)
-    return node
+def draw(self):
+    return "$"+fr"{self.to_latex()}"+"$"
