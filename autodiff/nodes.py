@@ -1,7 +1,68 @@
 import math
 from decimal import Decimal
+from abc import abstractmethod
 
 class Node():
+    @abstractmethod
+    def eval(self, env:dict) -> float:
+        """
+        evaluate at given environment
+        
+        param:
+            env : environment dictionary, e.g. {"x": 1, "y": 2}
+        
+        return:
+            value
+        """
+        pass
+
+    @abstractmethod
+    def diff(self, var:str):
+        """
+        symbolic differentiation for given variable
+        
+        param:
+            var : variable-name, e.g. "x"
+        
+        return:
+            differentiation result as top level node
+        """
+        pass
+
+    @abstractmethod
+    def autodiff(self, var:str, env:dict) -> float:
+        """
+        calculates gradient for var at given envirnment
+        
+        param:
+            env : environment dictionary, e.g. {"x": 1, "y": 2}
+            var : variable-name to calculate derivative for, e.g. "x"
+        
+        return:
+            gradiant-value
+        """
+        pass
+
+    @abstractmethod
+    def simplify(self):
+        """
+        simplifies node
+        
+        return:
+            simplified node
+        """
+        pass
+
+    @abstractmethod
+    def get_vars(self, vars:list):
+        """
+        used to recursivly get all variable from expression
+        
+        param:
+            vars : list of variables, variables found are added to this list
+        """
+        pass
+
     def __add__(self, p):
         return Plus(self,to_node(p))
     
@@ -45,11 +106,14 @@ class Const(Node):
     def diff(self, var):
         return Const(0)
 
-    def autodiff(self, env, var):
+    def autodiff(self, var, env):
         return 0
 
     def simplify(self):
         return self
+
+    def get_vars(self, vars):
+        return
 
     def __str__(self):
         return f"{self.value}"
@@ -70,7 +134,7 @@ class Variable(Node):
         else:
             return Const(0)
 
-    def autodiff(self, env, var):
+    def autodiff(self, var, env):
         if self.name == var:
             return 1
         else:
@@ -78,6 +142,10 @@ class Variable(Node):
 
     def simplify(self):
         return self
+
+    def get_vars(self, vars):
+        vars.append(self.name)
+        return
 
     def __str__(self):
         return f"{self.name}"
@@ -133,6 +201,11 @@ class Plus(Node):
                 if type(l.right) == Const:
                     self = Plus(Const(l.eval({})-l.right.eval({})), r.right)
         return self
+        
+    def get_vars(self, vars):
+        self.left.get_vars(vars)
+        self.right.get_vars(vars)
+        return
 
     def __str__(self):
         return f"{self.left.__str__()} + {self.right.__str__()}"
@@ -189,6 +262,11 @@ class Minus(Node):
                     self = Minus(Const(l.eval({})+l.right.eval({})), r.right)
         return self
 
+    def get_vars(self, vars):
+        self.left.get_vars(vars)
+        self.right.get_vars(vars)
+        return
+
     def __str__(self):
         return f"{self.left.__str__()} - {self.right.__str__()}"
 
@@ -241,6 +319,11 @@ class Multiply(Node):
                 if type(l.right) == Const:
                     self = Multiply(Const(r.eval({})*l.right.eval({})), l.left)
         return self
+
+    def get_vars(self, vars):
+        self.left.get_vars(vars)
+        self.right.get_vars(vars)
+        return
 
     def __str__(self):
         if type(self.left) == Plus or type(self.left) == Minus:
@@ -297,6 +380,11 @@ class Divide(Node):
             self = Const(0)
         return self
 
+    def get_vars(self, vars):
+        self.left.get_vars(vars)
+        self.right.get_vars(vars)
+        return
+
     def __str__(self):
         if type(self.left) == Const or type(self.left) == Variable:
             l = f"{self.left.__str__()}"
@@ -343,6 +431,11 @@ class Pow(Node):
         if r.eval({}) == 0:
             self = Const(1)
         return self
+
+    def get_vars(self, vars):
+        self.left.get_vars(vars)
+        self.right.get_vars(vars)
+        return
 
     def __str__(self):
         if type(self.left) == Const or type(self.left) == Variable:
