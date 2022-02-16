@@ -164,8 +164,8 @@ class Plus(Node):
     def diff(self, var):
         return Plus(self.left.diff(var), self.right.diff(var))
 
-    def autodiff(self, env, var):
-        return self.left.autodiff(env, var) + self.right.autodiff(env, var)
+    def autodiff(self, var, env):
+        return self.left.autodiff(var, env) + self.right.autodiff(var, env)
 
     def simplify(self):
         self.left = self.left.simplify()
@@ -224,8 +224,8 @@ class Minus(Node):
     def diff(self, var):
         return Minus(self.left.diff(var), self.right.diff(var)).simplify()
 
-    def autodiff(self, env, var):
-        return self.left.autodiff(env, var) - self.right.autodiff(env, var)
+    def autodiff(self, var, env):
+        return self.left.autodiff(var, env) - self.right.autodiff(var, env)
 
     def simplify(self):
         self.left = self.left.simplify()
@@ -288,11 +288,11 @@ class Multiply(Node):
         dr = self.right.diff(var)
         return Plus(Multiply(dl, r), Multiply(l, dr))
 
-    def autodiff(self, env, var):
+    def autodiff(self, var, env):
         l = self.left.eval(env)
-        dl = self.left.autodiff(env, var)
+        dl = self.left.autodiff(var, env)
         r = self.right.eval(env)
-        dr = self.right.autodiff(env, var)
+        dr = self.right.autodiff(var, env)
         return dl * r + l * dr
 
     def simplify(self):
@@ -362,11 +362,11 @@ class Divide(Node):
         dr = self.right.diff(var)
         return Divide(Minus(Multiply(dl, r), Multiply(l, dr)), Pow(r, Const(2)))
 
-    def autodiff(self, env, var):
+    def autodiff(self, var, env):
         l = self.left.eval(env)
-        dl = self.left.autodiff(env, var)
+        dl = self.left.autodiff(var, env)
         r = self.right.eval(env)
-        dr = self.right.autodiff(env, var)
+        dr = self.right.autodiff(var, env)
         return (dl*r - l*dr) / math.pow(r,2)
 
     def simplify(self):
@@ -411,13 +411,23 @@ class Pow(Node):
         l = self.left
         dl = self.left.diff(var)
         r = self.right
-        return Multiply(dl, Multiply(r, Pow(l, Const(r.eval({})-1))))
+        dr = self.right.diff(var)
+        if type(r) == Const:
+            return Multiply(dl, Multiply(r, Pow(l, Const(r.eval({})-1))))
+        if type(l) == Const:
+            return Multiply(dr, Multiply(self, Ln(l)))
+        return Multiply(Pow(l, r), Plus(Multiply(dr, Ln(l)), Multiply(r, Divide(dl, l))))
 
-    def autodiff(self, env, var):
+    def autodiff(self, var, env):
         l = self.left.eval(env)
-        dl = self.left.autodiff(env, var)
+        dl = self.left.autodiff(var, env)
         r = self.right.eval(env)
-        return dl * r * math.pow(l, r-1)
+        dr = self.right.autodiff(var, env)
+        if dr == 0:
+            return dl * r * math.pow(l, r-1)
+        if dl == 0:
+            return dr * math.pow(l, r) * math.log(l)
+        return math.pow(l, r) * (dr * math.log(l) + r * dl / l)
 
     def simplify(self):
         self.left = self.left.simplify()
@@ -443,6 +453,74 @@ class Pow(Node):
         else:
             l = f"({self.left.__str__()})"
         return f"{l}^{self.right.__str__()}"
+
+    def to_latex(self):
+        if type(self.left) == Const or type(self.left) == Variable:
+            l = f"{self.left.to_latex()}"
+        else:
+            l = f"({self.left.to_latex()})"
+        return f"{l}^"+"{"+self.right.to_latex()+"}"
+
+class Ln(Node):
+    def __init__(self, value):
+        self.child = value
+
+    def eval(self, env):
+        return math.log(self.child.eval(env))
+
+    def diff(self, var):
+        c = self.child
+        dc = self.child.diff(var)
+        return Divide(dc, c)
+
+    def autodiff(self, var, env):
+        c = self.child.eval(env)
+        dc = self.child.autodiff(var, env)
+        return dc / c
+
+    def simplify(self):
+        return self
+
+    def get_vars(self, vars):
+        self.child.get_vars(vars)
+        return
+
+    def __str__(self):
+        return f"ln({self.child.__str__()})"
+
+    def to_latex(self):
+        if type(self.left) == Const or type(self.left) == Variable:
+            l = f"{self.left.to_latex()}"
+        else:
+            l = f"({self.left.to_latex()})"
+        return f"{l}^"+"{"+self.right.to_latex()+"}"
+
+class Exp(Node):
+    def __init__(self, value):
+        self.child = value
+
+    def eval(self, env):
+        return math.exp(self.child.eval(env))
+
+    def diff(self, var):
+        c = self.child
+        dc = self.child.diff(var)
+        return Multiply(dc, self)
+
+    def autodiff(self, var, env):
+        c = self.child.eval(env)
+        dc = self.child.autodiff(var, env)
+        return dc * self.eval(env)
+
+    def simplify(self):
+        return self
+
+    def get_vars(self, vars):
+        self.child.get_vars(vars)
+        return
+
+    def __str__(self):
+        return f"exp({self.child.__str__()})"
 
     def to_latex(self):
         if type(self.left) == Const or type(self.left) == Variable:

@@ -41,7 +41,7 @@ class Function():
         for var in self.vars:
             env[var] = kwargs.get(var, 1)
         for i in range(0, self.dim):
-            res[i] = self.func[i].autodiff(env, var)
+            res[i] = self.func[i].autodiff(var, env)
         return res    
 
     def jacobian_values(self, **kwargs):
@@ -60,7 +60,7 @@ class Function():
         jac = np.zeros((self.dim, len(self.vars)), dtype="float32")
         for i in range(0, self.dim):
             for j in range(0, len(self.vars)):
-                jac[i,j] = self.func[i].autodiff(env, self.vars[j])
+                jac[i,j] = self.func[i].autodiff(self.vars[j], env)
         return jac
 
     def covariance(self, values):
