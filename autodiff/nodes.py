@@ -54,12 +54,12 @@ class Node():
         pass
 
     @abstractmethod
-    def get_vars(self, vars:list):
+    def vars(self):
         """
         used to recursivly get all variable from expression
         
-        param:
-            vars : list of variables, variables found are added to this list
+        return:
+            generator for all variables
         """
         pass
 
@@ -112,8 +112,8 @@ class Const(Node):
     def simplify(self):
         return self
 
-    def get_vars(self, vars):
-        return
+    def vars(self):
+        yield from []
 
     def __str__(self):
         return f"{self.value}"
@@ -143,9 +143,8 @@ class Variable(Node):
     def simplify(self):
         return self
 
-    def get_vars(self, vars):
-        vars.append(self.name)
-        return
+    def vars(self):
+        yield self.name
 
     def __str__(self):
         return f"{self.name}"
@@ -202,10 +201,9 @@ class Plus(Node):
                     self = Plus(Const(l.eval({})-l.right.eval({})), r.right)
         return self
         
-    def get_vars(self, vars):
-        self.left.get_vars(vars)
-        self.right.get_vars(vars)
-        return
+    def vars(self):
+        yield from self.left.vars()
+        yield from self.right.vars()
 
     def __str__(self):
         return f"{self.left.__str__()} + {self.right.__str__()}"
@@ -262,10 +260,9 @@ class Minus(Node):
                     self = Minus(Const(l.eval({})+l.right.eval({})), r.right)
         return self
 
-    def get_vars(self, vars):
-        self.left.get_vars(vars)
-        self.right.get_vars(vars)
-        return
+    def vars(self):
+        yield from self.left.vars()
+        yield from self.right.vars()
 
     def __str__(self):
         return f"{self.left.__str__()} - {self.right.__str__()}"
@@ -320,10 +317,9 @@ class Multiply(Node):
                     self = Multiply(Const(r.eval({})*l.right.eval({})), l.left)
         return self
 
-    def get_vars(self, vars):
-        self.left.get_vars(vars)
-        self.right.get_vars(vars)
-        return
+    def vars(self):
+        yield from self.left.vars()
+        yield from self.right.vars()
 
     def __str__(self):
         if type(self.left) == Plus or type(self.left) == Minus:
@@ -380,10 +376,9 @@ class Divide(Node):
             self = Const(0)
         return self
 
-    def get_vars(self, vars):
-        self.left.get_vars(vars)
-        self.right.get_vars(vars)
-        return
+    def vars(self):
+        yield from self.left.vars()
+        yield from self.right.vars()
 
     def __str__(self):
         if type(self.left) == Const or type(self.left) == Variable:
@@ -400,68 +395,67 @@ class Divide(Node):
         return r"\frac{"+self.left.to_latex()+"}{"+self.right.to_latex()+"}"
 
 class Pow(Node):
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
+    def __init__(self, base, exp):
+        self.base = base
+        self.exp = exp
 
     def eval(self, env):
-        return math.pow(self.left.eval(env), self.right.eval(env))
+        return math.pow(self.base.eval(env), self.exp.eval(env))
 
     def diff(self, var):
-        l = self.left
-        dl = self.left.diff(var)
-        r = self.right
-        dr = self.right.diff(var)
-        if type(r) == Const:
-            return Multiply(dl, Multiply(r, Pow(l, Const(r.eval({})-1))))
-        if type(l) == Const:
-            return Multiply(dr, Multiply(self, Ln(l)))
-        return Multiply(Pow(l, r), Plus(Multiply(dr, Ln(l)), Multiply(r, Divide(dl, l))))
+        b = self.base
+        db = self.base.diff(var)
+        e = self.exp
+        de = self.exp.diff(var)
+        if type(e) == Const:
+            return Multiply(db, Multiply(e, Pow(b, Const(e.eval({})-1))))
+        if type(b) == Const:
+            return Multiply(de, Multiply(self, Log(b)))
+        return Multiply(Pow(b, e), Plus(Multiply(de, Log(b)), Multiply(e, Divide(db, b))))
 
     def autodiff(self, var, env):
-        l = self.left.eval(env)
-        dl = self.left.autodiff(var, env)
-        r = self.right.eval(env)
-        dr = self.right.autodiff(var, env)
-        if dr == 0:
-            return dl * r * math.pow(l, r-1)
-        if dl == 0:
-            return dr * math.pow(l, r) * math.log(l)
-        return math.pow(l, r) * (dr * math.log(l) + r * dl / l)
+        b = self.base.eval(env)
+        db = self.base.autodiff(var, env)
+        e = self.exp.eval(env)
+        de = self.exp.autodiff(var, env)
+        if de == 0:
+            return db * e * math.pow(b, e-1)
+        if db == 0:
+            return de * math.pow(b, e) * math.log(b)
+        return math.pow(b, e) * (de * math.log(b) + e * db / b)
 
     def simplify(self):
-        self.left = self.left.simplify()
-        self.right = self.right
-        l = self.left
-        r = self.right
-        if type(l) == Const:
-            self = Const(math.pow(l.eval({}), r.eval({})))
-        if r.eval({}) == 1:
-            self = l
-        if r.eval({}) == 0:
+        self.base = self.base.simplify()
+        self.exp = self.exp.simplify()
+        b = self.base
+        e = self.exp
+        if type(b) == Const:
+            self = Const(math.pow(b.eval({}), e.eval({})))
+        if e.eval({}) == 1:
+            self = b
+        if e.eval({}) == 0:
             self = Const(1)
         return self
 
-    def get_vars(self, vars):
-        self.left.get_vars(vars)
-        self.right.get_vars(vars)
-        return
+    def vars(self):
+        yield from self.base.vars()
+        yield from self.exp.vars()
 
     def __str__(self):
-        if type(self.left) == Const or type(self.left) == Variable:
-            l = f"{self.left.__str__()}"
+        if type(self.base) == Const or type(self.base) == Variable:
+            b = f"{self.base.__str__()}"
         else:
-            l = f"({self.left.__str__()})"
-        return f"{l}^{self.right.__str__()}"
+            b = f"({self.base.__str__()})"
+        return f"{b}^{self.exp.__str__()}"
 
     def to_latex(self):
-        if type(self.left) == Const or type(self.left) == Variable:
-            l = f"{self.left.to_latex()}"
+        if type(self.base) == Const or type(self.base) == Variable:
+            b = f"{self.base.to_latex()}"
         else:
-            l = f"({self.left.to_latex()})"
-        return f"{l}^"+"{"+self.right.to_latex()+"}"
+            b = f"({self.base.to_latex()})"
+        return f"{b}^"+"{"+self.exp.to_latex()+"}"
 
-class Ln(Node):
+class Log(Node):
     def __init__(self, value):
         self.child = value
 
@@ -479,21 +473,17 @@ class Ln(Node):
         return dc / c
 
     def simplify(self):
+        self.child = self.child.simplify()
         return self
 
-    def get_vars(self, vars):
-        self.child.get_vars(vars)
-        return
+    def vars(self):
+        yield from self.child.vars()
 
     def __str__(self):
         return f"ln({self.child.__str__()})"
 
     def to_latex(self):
-        if type(self.left) == Const or type(self.left) == Variable:
-            l = f"{self.left.to_latex()}"
-        else:
-            l = f"({self.left.to_latex()})"
-        return f"{l}^"+"{"+self.right.to_latex()+"}"
+        return r"ln("+self.child.to_latex()+")"
 
 class Exp(Node):
     def __init__(self, value):
@@ -513,21 +503,17 @@ class Exp(Node):
         return dc * self.eval(env)
 
     def simplify(self):
+        self.child = self.child.simplify()
         return self
 
-    def get_vars(self, vars):
-        self.child.get_vars(vars)
-        return
+    def vars(self):
+        yield from self.child.vars()
 
     def __str__(self):
         return f"exp({self.child.__str__()})"
 
     def to_latex(self):
-        if type(self.left) == Const or type(self.left) == Variable:
-            l = f"{self.left.to_latex()}"
-        else:
-            l = f"({self.left.to_latex()})"
-        return f"{l}^"+"{"+self.right.to_latex()+"}"
+        return r"\exp("+self.child.to_latex()+")"
 
 def draw(self):
     return "$"+fr"{self.to_latex()}"+"$"
