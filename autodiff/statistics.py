@@ -3,9 +3,12 @@ import numpy as np
 import math
 
 class Function():
-    def __init__(self, dim:int, vars:list):
+    def __init__(self, dim:int, *args):
         self.func = [None] * dim
         self.dim = dim
+        vars = []
+        for v in args:
+            vars.append(v)
         self.vars = vars
 
     def eval(self, **kwargs):
@@ -112,14 +115,14 @@ class Function():
             raise ValueError("index out of range")
         for var in value.vars():
             if var not in self.vars:
-                raise ValueError("wrong variales")
+                raise ValueError("variale mismatch")
         self.func[key] = value
 
     def __str__(self):
-        s = "( " + self.func[0].__str__() + "\n"
+        s = "[ " + self.func[0].__str__() + "\n"
         for i in range(1, self.dim-1):
             s += "  " + self.func[i].__str__() + "\n"
-        s += "  " + self.func[self.dim-1].__str__() + " )"
+        s += "  " + self.func[self.dim-1].__str__() + " ]"
         return s
 
 def cross_covariance(valuematrix):
