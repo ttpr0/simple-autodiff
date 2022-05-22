@@ -2,14 +2,20 @@ import math
 from decimal import Decimal
 from abc import abstractmethod
 
-class Node():
+class Expr():
+    def __init__(self, input:tuple, value:float):
+        self.dimension:tuple = (1,)
+        self.input:tuple = input
+        self.value:float = value
+        self.gradient:float = 0
+
     @abstractmethod
-    def eval(self, env:dict) -> float:
+    def eval(self, **env) -> float:
         """
         evaluate at given environment
         
         param:
-            env : environment dictionary, e.g. {"x": 1, "y": 2}
+            env : environment, e.g. x=1, y=2
         
         return:
             value
@@ -30,12 +36,12 @@ class Node():
         pass
 
     @abstractmethod
-    def autodiff(self, var:str, env:dict) -> float:
+    def autodiff(self, var:str, **env) -> float:
         """
-        calculates gradient for var at given envirnment
-        
+        calculates gradient for var at given envirnment, both evaluates expr and calculates diff using forward mode     
+
         param:
-            env : environment dictionary, e.g. {"x": 1, "y": 2}
+            env : environment dictionary, e.g. x=1, y=2
             var : variable-name to calculate derivative for, e.g. "x"
         
         return:
@@ -44,36 +50,51 @@ class Node():
         pass
 
     @abstractmethod
-    def simplify(self):
+    def forward(self, var:str) -> float:
         """
-        simplifies node
+        calculates gradient for var using autodiff in forward mode
+
+        -> only works after eval has been calculated or rigth after graph creation
+        
+        param:
+            var : variable-name to calculate derivative for, e.g. "x"
         
         return:
-            simplified node
+            gradiant w.r.t. given variable
         """
         pass
 
-    @abstractmethod
-    def vars(self):
+    def backward(self):
         """
-        used to recursivly get all variable from expression
+        calculates gradient using autodiff in backward mode
+
+        -> gradient can be found on leaf nodes using expr.gradient \n
+        -> only works after eval has been calculated or rigth after graph creation
+        """
+        self.gradient = 1
+
+        def iter(node:Expr):
+            grads = node.__class__._backward(node.gradient, node.input)
+            for i in range(0, len(node.input)):
+                if type(node.input[i]) == Variable:
+                    node.input[i].gradient += grads[i]
+                else:
+                    node.input[i].gradient = grads[i]
+                iter(node.input[i])
         
-        return:
-            generator for all variables
-        """
-        pass
+        iter(self)
 
     def __add__(self, p):
-        return Plus(self,to_node(p))
+        return Add(self,to_node(p))
     
     def __radd__(self, p):
-        return Plus(to_node(p), self)
+        return Add(to_node(p), self)
 
     def __sub__(self, p):
-        return Minus(self,to_node(p))
+        return Sub(self,to_node(p))
 
     def __rsub__(self, p):
-        return Minus(to_node(p), self)
+        return Sub(to_node(p), self)
 
     def __mul__(self, p):
         return Multiply(self,to_node(p))
@@ -91,41 +112,45 @@ class Node():
         return Pow(self,to_node(p))
 
 def to_node(p):
-    if isinstance(p, Node):
+    if isinstance(p, Expr):
         return p
     else:
         return Const(p)
 
-class Const(Node):
-    def __init__(self, number):
-        self.value = Decimal(number.__str__())
+class Const(Expr):
+    def __init__(self, number:float, name:str = ""):
+        super().__init__((), number)
+        self.number:Decimal = Decimal(number)
+        self.name:str = name
 
-    def eval(self, env):
-        return float(self.value)
+    def eval(self, **env):
+        return self.value
 
     def diff(self, var):
         return Const(0)
 
-    def autodiff(self, var, env):
+    def autodiff(self, var, **env):
         return 0
 
-    def simplify(self):
-        return self
+    def forward(self, var):
+        return 0
 
-    def vars(self):
-        yield from []
+    @staticmethod
+    def _backward(gradient, input):
+        return ()
 
     def __str__(self):
-        return f"{self.value}"
+        return f"{self.number}"
 
-    def to_latex(self):
-        return f"{self.value}"
+    def _repr_latex_(self):
+        return f"{self.number}"
 
-class Variable(Node):
-    def __init__(self, name):
+class Variable(Expr):
+    def __init__(self, name:str, value:float = 1):
+        super().__init__((), value)
         self.name = name
 
-    def eval(self, env):
+    def eval(self, **env):
         return env[self.name]
 
     def diff(self, var):
@@ -134,476 +159,269 @@ class Variable(Node):
         else:
             return Const(0)
 
-    def autodiff(self, var, env):
+    def autodiff(self, var, **env):
         if self.name == var:
             return 1
         else:
             return 0
 
-    def simplify(self):
-        return self
-
-    def vars(self):
-        yield self.name
-
-    def __str__(self):
-        return f"{self.name}"
-
-    def to_latex(self):
-        return f"{self.name}"
-
-class Plus(Node):
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
-
-    def eval(self, env):
-        return self.left.eval(env) + self.right.eval(env)
-
-    def diff(self, var):
-        return Plus(self.left.diff(var), self.right.diff(var))
-
-    def autodiff(self, var, env):
-        return self.left.autodiff(var, env) + self.right.autodiff(var, env)
-
-    def simplify(self):
-        self.left = self.left.simplify()
-        self.right = self.right.simplify()
-        l = self.left
-        r = self.right
-        if type(l) == Const and type(r) == Const:
-            self = Const(l.eval({}) + r.eval({}))
-        if type(l) == Const and l.eval({}) == 0:
-            self = r
-        if type(r) == Const and r.eval({}) == 0:
-            self = l
-        if type(l) == Const:
-            if type(r) == Plus:
-                if type(r.left) == Const:
-                    self = Plus(Const(l.eval({})+r.left.eval({})), r.right)
-                if type(r.right) == Const:
-                    self = Plus(Const(l.eval({})+r.right.eval({})), r.left)
-            if type(r) == Minus:
-                if type(r.left) == Const:
-                    self = Minus(Const(l.eval({})+r.left.eval({})), r.right)
-                if type(r.right) == Const:
-                    self = Plus(Const(l.eval({})-r.right.eval({})), r.right)
-        if type(r) == Const:
-            if type(l) == Plus:
-                if type(l.left) == Const:
-                    self = Plus(Const(r.eval({})+l.left.eval({})), l.right)
-                if type(l.right) == Const:
-                    self = Plus(Const(r.eval({})+l.right.eval({})), l.left)
-            if type(l) == Minus:
-                if type(l.left) == Const:
-                    self = Minus(Const(r.eval({})+l.left.eval({})), l.right)
-                if type(l.right) == Const:
-                    self = Plus(Const(l.eval({})-l.right.eval({})), r.right)
-        return self
+    def forward(self, var):
+        if self.name == var:
+            return 1
+        else:
+            return 0
         
-    def vars(self):
-        yield from self.left.vars()
-        yield from self.right.vars()
+    @staticmethod
+    def _backward(gradient, input):
+        return ()
 
     def __str__(self):
-        return f"{self.left.__str__()} + {self.right.__str__()}"
+        return f"{self.name}"
+
+    def _repr_latex_(self):
+        return f"{self.name}"
+
+
+class Add(Expr):
+    def __init__(self, left:Expr, right:Expr):
+        super().__init__((left,right), left.value+right.value)
+
+    def eval(self, **env):
+        return self.input[0].eval(**env) + self.input[1].eval(**env)
+
+    def diff(self, var):
+        return Add(self.input[0].diff(var), self.input[1].diff(var))
+
+    def autodiff(self, var, **env):
+        return self.input[0].autodiff(var, **env) + self.input[1].autodiff(var, **env)
+
+    def forward(self, var):
+        return self.input[0].forward(var) + self.input[1].forward(var)
+
+    @staticmethod
+    def _backward(gradient, input):
+        return (gradient,gradient)
+
+    def __str__(self):
+        return f"{self.input[0].__str__()} + {self.input[1].__str__()}"
     
-    def to_latex(self):
-        return f"{self.left.to_latex()}+{self.right.to_latex()}"
+    def _repr_latex_(self):
+        return f"{self.input[0]._repr_latex_()}+{self.input[1]._repr_latex_()}"
 
-class Minus(Node):
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
+class Sub(Expr):
+    def __init__(self, left:Expr, right:Expr):
+        super().__init__((left,right), left.value-right.value)
 
-    def eval(self, env):
-        return self.left.eval(env) - self.right.eval(env)
+    def eval(self, **env):
+        return self.input[0].eval(**env) - self.input[1].eval(**env)
 
     def diff(self, var):
-        return Minus(self.left.diff(var), self.right.diff(var)).simplify()
+        return Sub(self.input[0].diff(var), self.input[1].diff(var))
 
-    def autodiff(self, var, env):
-        return self.left.autodiff(var, env) - self.right.autodiff(var, env)
+    def autodiff(self, var, **env):
+        return self.input[0].autodiff(var, **env) - self.input[1].autodiff(var, **env)
 
-    def simplify(self):
-        self.left = self.left.simplify()
-        self.right = self.right.simplify()
-        l = self.left
-        r = self.right
-        if type(l) == Const and type(r) == Const:
-            self = Const(l.eval({}) - r.eval({}))
-        if type(l) == Const and l.eval({}) == 0:
-            self = Const(-r.eval({}))
-        if type(r) == Const and r.eval({}) == 0:
-            self = l
-        if type(l) == Const:
-            if type(r) == Plus:
-                if type(r.left) == Const:
-                    self = Minus(Const(l.eval({})-r.left.eval({})), r.right)
-                if type(r.right) == Const:
-                    self = Minus(Const(l.eval({})-r.right.eval({})), r.left)
-            if type(r) == Minus:
-                if type(r.left) == Const:
-                    self = Plus(Const(l.eval({})-r.left.eval({})), r.right)
-                if type(r.right) == Const:
-                    self = Minus(Const(l.eval({})+r.right.eval({})), r.right)
-        if type(r) == Const:
-            if type(l) == Plus:
-                if type(l.left) == Const:
-                    self = Minus(Const(r.eval({})-l.left.eval({})), l.right)
-                if type(l.right) == Const:
-                    self = Minus(Const(r.eval({})-l.right.eval({})), l.left)
-            if type(l) == Minus:
-                if type(l.left) == Const:
-                    self = Plus(Const(r.eval({})-l.left.eval({})), l.right)
-                if type(l.right) == Const:
-                    self = Minus(Const(l.eval({})+l.right.eval({})), r.right)
-        return self
+    def forward(self, var):
+        return self.input[0].forward(var) - self.input[1].forward(var)
 
-    def vars(self):
-        yield from self.left.vars()
-        yield from self.right.vars()
+    @staticmethod
+    def _backward(gradient, input):
+        return (gradient,-gradient)
 
     def __str__(self):
-        return f"{self.left.__str__()} - {self.right.__str__()}"
+        return f"{self.input[0].__str__()} - {self.input[1].__str__()}"
 
-    def to_latex(self):
-        return f"{self.left.to_latex()}-{self.right.to_latex()}"
+    def _repr_latex_(self):
+        return f"{self.input[0]._repr_latex_()}-{self.input[1]._repr_latex_()}"
 
-class Multiply(Node):
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
+class Multiply(Expr):
+    def __init__(self, left:Expr, right:Expr):
+        super().__init__((left,right), left.value*right.value)
 
-    def eval(self, env):
-        return self.left.eval(env) * self.right.eval(env)
+    def eval(self, **env):
+        return self.input[0].eval(**env) * self.input[1].eval(**env)
 
     def diff(self, var):
-        l = self.left
-        dl = self.left.diff(var)
-        r = self.right
-        dr = self.right.diff(var)
-        return Plus(Multiply(dl, r), Multiply(l, dr))
+        l = self.input[0]
+        dl = self.input[0].diff(var)
+        r = self.input[1]
+        dr = self.input[1].diff(var)
+        return Add(Multiply(dl, r), Multiply(l, dr))
 
-    def autodiff(self, var, env):
-        l = self.left.eval(env)
-        dl = self.left.autodiff(var, env)
-        r = self.right.eval(env)
-        dr = self.right.autodiff(var, env)
+    def autodiff(self, var, **env):
+        l = self.input[0].eval(**env)
+        dl = self.input[0].autodiff(var, **env)
+        r = self.input[1].eval(**env)
+        dr = self.input[1].autodiff(var, **env)
         return dl * r + l * dr
 
-    def simplify(self):
-        self.left = self.left.simplify()
-        self.right = self.right.simplify()
-        l = self.left
-        r = self.right
-        if type(l) == Const and type(r) == Const:
-            self = Const(l.eval({}) * l.eval({}))
-        if type(l) == Const and l.eval({}) == 0:
-            self = Const(0)
-        if type(r) == Const and r.eval({}) == 0:
-            self = Const(0)
-        if type(l) == Const:
-            if type(r) == Multiply:
-                if type(r.left) == Const:
-                    self = Multiply(Const(l.eval({})*r.left.eval({})), r.right)
-                if type(r.right) == Const:
-                    self = Multiply(Const(l.eval({})*r.right.eval({})), r.left)
-        if type(r) == Const:
-            if type(l) == Multiply:
-                if type(l.left) == Const:
-                    self = Multiply(Const(r.eval({})*l.left.eval({})), l.right)
-                if type(l.right) == Const:
-                    self = Multiply(Const(r.eval({})*l.right.eval({})), l.left)
-        return self
+    def forward(self, var):
+        l = self.input[0].value
+        dl = self.input[0].forward(var)
+        r = self.input[1].value
+        dr = self.input[1].forward(var)
+        return dl * r + l * dr
 
-    def vars(self):
-        yield from self.left.vars()
-        yield from self.right.vars()
+    @staticmethod
+    def _backward(gradient, input):
+        return (gradient*input[1].value,gradient*input[0].value)
 
     def __str__(self):
-        if type(self.left) == Plus or type(self.left) == Minus:
-            l = f"({self.left.__str__()})"
+        if type(self.input[0]) == Add or type(self.input[0]) == Sub:
+            l = f"({self.input[0].__str__()})"
         else:
-            l = f"{self.left.__str__()}"
-        if type(self.right) == Plus or type(self.right) == Minus:
-            r = f"({self.right.__str__()})"
+            l = f"{self.input[0].__str__()}"
+        if type(self.input[1]) == Add or type(self.input[1]) == Sub:
+            r = f"({self.input[1].__str__()})"
         else:
-            r = f"{self.right.__str__()}"
+            r = f"{self.input[1].__str__()}"
         return f"{l} * {r}"        
 
-    def to_latex(self):
-        if type(self.left) == Plus or type(self.left) == Minus:
-            l = f"({self.left.to_latex()})"
+    def _repr_latex_(self):
+        if type(self.input[0]) == Add or type(self.input[0]) == Sub:
+            l = f"({self.input[0]._repr_latex_()})"
         else:
-            l = f"{self.left.to_latex()}"
-        if type(self.right) == Plus or type(self.right) == Minus:
-            r = f"({self.right.to_latex()})"
+            l = f"{self.input[0]._repr_latex_()}"
+        if type(self.input[1]) == Add or type(self.input[1]) == Sub:
+            r = f"({self.input[1]._repr_latex_()})"
         else:
-            r = f"{self.right.to_latex()}"
+            r = f"{self.input[1]._repr_latex_()}"
         return f"{l}*{r}" 
 
-class Divide(Node):
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
+class Divide(Expr):
+    def __init__(self, left:Expr, right:Expr):
+        super().__init__((left,right), left.value/right.value)
 
-    def eval(self, env):
-        return self.left.eval(env) / self.right.eval(env)
+    def eval(self, **env):
+        return self.input[0].eval(**env) / self.input[1].eval(**env)
 
     def diff(self, var):
-        l = self.left
-        dl = self.left.diff(var)
-        r = self.right
-        dr = self.right.diff(var)
-        return Divide(Minus(Multiply(dl, r), Multiply(l, dr)), Pow(r, Const(2)))
+        l = self.input[0]
+        dl = self.input[0].diff(var)
+        r = self.input[1]
+        dr = self.input[1].diff(var)
+        return Divide(Sub(Multiply(dl, r), Multiply(l, dr)), Pow(r, Const(2)))
 
-    def autodiff(self, var, env):
-        l = self.left.eval(env)
-        dl = self.left.autodiff(var, env)
-        r = self.right.eval(env)
-        dr = self.right.autodiff(var, env)
+    def autodiff(self, var, **env):
+        l = self.input[0].eval(**env)
+        dl = self.input[0].autodiff(var, **env)
+        r = self.input[1].eval(**env)
+        dr = self.input[1].autodiff(var, **env)
         return (dl*r - l*dr) / math.pow(r,2)
 
-    def simplify(self):
-        self.left = self.left.simplify()
-        self.right = self.right.simplify()
-        l = self.left
-        r = self.right
-        if type(l) == Const and type(r) == Const:
-            self = Const(l.eval({}) / r.eval({}))
-        if type(l) == Const and l.eval({}) == 0:
-            self = Const(0)
-        return self
+    def forward(self, var):
+        l = self.input[0].value
+        dl = self.input[0].forward(var)
+        r = self.input[1].value
+        dr = self.input[1].forward(var)
+        return (dl*r - l*dr) / math.pow(r,2)
 
-    def vars(self):
-        yield from self.left.vars()
-        yield from self.right.vars()
+    @staticmethod
+    def _backward(gradient, input):
+        return (gradient/input[1].value,-gradient*input[0].value/input[1].value**2)
 
     def __str__(self):
-        if type(self.left) == Const or type(self.left) == Variable:
-            l = f"{self.left.__str__()}"
+        if type(self.input[0]) == Const or type(self.input[0]) == Variable:
+            l = f"{self.input[0].__str__()}"
         else:
-            l = f"({self.left.__str__()})"
-        if type(self.right) == Const or type(self.right) == Variable:
-            r = f"{self.right.__str__()}"
+            l = f"({self.input[0].__str__()})"
+        if type(self.input[1]) == Const or type(self.input[1]) == Variable:
+            r = f"{self.input[1].__str__()}"
         else:
-            r = f"({self.right.__str__()})"
+            r = f"({self.input[1].__str__()})"
         return f"{l} / {r}"     
 
-    def to_latex(self):
-        return r"\frac{"+self.left.to_latex()+"}{"+self.right.to_latex()+"}"
+    def _repr_latex_(self):
+        return r"\frac{"+self.input[0]._repr_latex_()+"}{"+self.input[1]._repr_latex_()+"}"
 
-class Pow(Node):
-    def __init__(self, base, exp):
-        self.base = base
-        self.exp = exp
+class Pow(Expr):
+    def __init__(self, base:Expr, exp:Expr):
+        super().__init__((base,exp), base.value**exp.value)
 
-    def eval(self, env):
-        return math.pow(self.base.eval(env), self.exp.eval(env))
+    def eval(self, **env):
+        return math.pow(self.input[0].eval(**env), self.input[1].eval(**env))
 
     def diff(self, var):
-        b = self.base
-        db = self.base.diff(var)
-        e = self.exp
-        de = self.exp.diff(var)
+        b = self.input[0]
+        db = self.input[0].diff(var)
+        e = self.input[1]
+        de = self.input[1].diff(var)
         if type(e) == Const:
-            return Multiply(db, Multiply(e, Pow(b, Const(e.eval({})-1))))
+            return Multiply(db, Multiply(e, Pow(b, Const(e.eval()-1))))
         if type(b) == Const:
-            return Multiply(de, Multiply(self, Log(b)))
-        return Multiply(Pow(b, e), Plus(Multiply(de, Log(b)), Multiply(e, Divide(db, b))))
+            return Multiply(de, Multiply(self, Ln(b)))
+        return Multiply(Pow(b, e), Add(Multiply(de, Ln(b)), Multiply(e, Divide(db, b))))
 
-    def autodiff(self, var, env):
-        b = self.base.eval(env)
-        db = self.base.autodiff(var, env)
-        e = self.exp.eval(env)
-        de = self.exp.autodiff(var, env)
+    def autodiff(self, var, **env):
+        b = self.input[0].eval(**env)
+        db = self.input[0].autodiff(var, **env)
+        e = self.input[1].eval(**env)
+        de = self.input[1].autodiff(var, **env)
         if de == 0:
             return db * e * math.pow(b, e-1)
         if db == 0:
             return de * math.pow(b, e) * math.log(b)
         return math.pow(b, e) * (de * math.log(b) + e * db / b)
 
-    def simplify(self):
-        self.base = self.base.simplify()
-        self.exp = self.exp.simplify()
-        b = self.base
-        e = self.exp
-        if type(b) == Const:
-            self = Const(math.pow(b.eval({}), e.eval({})))
-        if e.eval({}) == 1:
-            self = b
-        if e.eval({}) == 0:
-            self = Const(1)
-        return self
+    def forward(self, var):
+        b = self.input[0].value
+        db = self.input[0].forward(var)
+        e = self.input[1].value
+        de = self.input[1].forward(var)
+        if de == 0:
+            return db * e * math.pow(b, e-1)
+        if db == 0:
+            return de * math.pow(b, e) * math.log(b)
+        return math.pow(b, e) * (de * math.log(b) + e * db / b)
 
-    def vars(self):
-        yield from self.base.vars()
-        yield from self.exp.vars()
+    @staticmethod
+    def _backward(gradient, input):
+        db = input[1].value * input[0].value**(input[1].value-1)
+        de = math.log(input[0].value) * input[0].value**input[1].value
+        return (gradient*db,gradient*de)
 
     def __str__(self):
-        if type(self.base) == Const or type(self.base) == Variable:
-            b = f"{self.base.__str__()}"
+        if type(self.input[0]) == Const or type(self.input[0]) == Variable:
+            b = f"{self.input[0].__str__()}"
         else:
-            b = f"({self.base.__str__()})"
-        return f"{b}^{self.exp.__str__()}"
+            b = f"({self.input[0].__str__()})"
+        return f"{b}^{self.input[1].__str__()}"
 
-    def to_latex(self):
-        if type(self.base) == Const or type(self.base) == Variable:
-            b = f"{self.base.to_latex()}"
+    def _repr_latex_(self):
+        if type(self.input[0]) == Const or type(self.input[0]) == Variable:
+            b = f"{self.input[0]._repr_latex_()}"
         else:
-            b = f"({self.base.to_latex()})"
-        return f"{b}^"+"{"+self.exp.to_latex()+"}"
+            b = f"({self.input[0]._repr_latex_()})"
+        return f"{b}^"+"{"+self.input[1]._repr_latex_()+"}"
 
-class Log(Node):
-    def __init__(self, value):
-        self.child = value
+class Ln(Expr):
+    def __init__(self, child:Expr):
+        super().__init__((child,), math.log(child.value))
 
-    def eval(self, env):
-        return math.log(self.child.eval(env))
+    def eval(self, **env):
+        return math.log(self.input[0].eval(**env))
 
     def diff(self, var):
-        c = self.child
-        dc = self.child.diff(var)
+        c = self.input[0]
+        dc = self.input[0].diff(var)
         return Divide(dc, c)
 
-    def autodiff(self, var, env):
-        c = self.child.eval(env)
-        dc = self.child.autodiff(var, env)
+    def autodiff(self, var, **env):
+        c = self.input[0].eval(**env)
+        dc = self.input[0].autodiff(var, **env)
         return dc / c
 
-    def simplify(self):
-        self.child = self.child.simplify()
-        return self
+    def forward(self, var):
+        c = self.input[0].value
+        dc = self.input[0].forward(var)
+        return dc / c
 
-    def vars(self):
-        yield from self.child.vars()
-
-    def __str__(self):
-        return f"ln({self.child.__str__()})"
-
-    def to_latex(self):
-        return r"ln("+self.child.to_latex()+")"
-
-class Exp(Node):
-    def __init__(self, value):
-        self.child = value
-
-    def eval(self, env):
-        return math.exp(self.child.eval(env))
-
-    def diff(self, var):
-        c = self.child
-        dc = self.child.diff(var)
-        return Multiply(dc, self)
-
-    def autodiff(self, var, env):
-        c = self.child.eval(env)
-        dc = self.child.autodiff(var, env)
-        return dc * self.eval(env)
-
-    def simplify(self):
-        self.child = self.child.simplify()
-        return self
-
-    def vars(self):
-        yield from self.child.vars()
+    @staticmethod
+    def _backward(gradient, input):
+        return (gradient/input[0].value,)
 
     def __str__(self):
-        return f"exp({self.child.__str__()})"
+        return f"ln({self.input[0].__str__()})"
 
-    def to_latex(self):
-        return r"\exp("+self.child.to_latex()+")"
-
-class Sin(Node):
-    def __init__(self, value):
-        self.child = value
-
-    def eval(self, env):
-        return math.sin(self.child.eval(env))
-
-    def diff(self, var):
-        c = self.child
-        dc = self.child.diff(var)
-        return Multiply(dc, Cos(c))
-
-    def autodiff(self, var, env):
-        c = self.child.eval(env)
-        dc = self.child.autodiff(var, env)
-        return dc * math.cos(c)
-
-    def simplify(self):
-        self.child = self.child.simplify()
-        return self
-
-    def vars(self):
-        yield from self.child.vars()
-
-    def __str__(self):
-        return f"sin({self.child.__str__()})"
-
-    def to_latex(self):
-        return r"sin("+self.child.to_latex()+")"
-
-class Cos(Node):
-    def __init__(self, value):
-        self.child = value
-
-    def eval(self, env):
-        return math.cos(self.child.eval(env))
-
-    def diff(self, var):
-        c = self.child
-        dc = self.child.diff(var)
-        return Multiply(dc, Multiply(Const(-1), Sin(c)))
-
-    def autodiff(self, var, env):
-        c = self.child.eval(env)
-        dc = self.child.autodiff(var, env)
-        return -dc * math.sin(c)
-
-    def simplify(self):
-        self.child = self.child.simplify()
-        return self
-
-    def vars(self):
-        yield from self.child.vars()
-
-    def __str__(self):
-        return f"cos({self.child.__str__()})"
-
-    def to_latex(self):
-        return r"\cos("+self.child.to_latex()+")"
-
-class Tan(Node):
-    def __init__(self, value):
-        self.child = value
-
-    def eval(self, env):
-        return math.tan(self.child.eval(env))
-
-    def diff(self, var):
-        c = self.child
-        dc = self.child.diff(var)
-        return Divide(dc, Pow(Cos(c), Const(2)))
-
-    def autodiff(self, var, env):
-        c = self.child.eval(env)
-        dc = self.child.autodiff(var, env)
-        return dc / math.cos(c)**2
-
-    def simplify(self):
-        self.child = self.child.simplify()
-        return self
-
-    def vars(self):
-        yield from self.child.vars()
-
-    def __str__(self):
-        return f"tan({self.child.__str__()})"
-
-    def to_latex(self):
-        return r"\tan("+self.child.to_latex()+")"
-
-def draw(self):
-    return "$"+fr"{self.to_latex()}"+"$"
+    def _repr_latex_(self):
+        return r"ln("+self.input[0]._repr_latex_()+")"

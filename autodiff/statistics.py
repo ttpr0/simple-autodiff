@@ -1,4 +1,5 @@
-from autodiff.nodes import Variable
+from autodiff import Variable
+from autodiff.utils import get_vars
 import numpy as np
 import math
 
@@ -26,7 +27,7 @@ class Function():
         for var in self.vars:
             env[var] = kwargs.get(var, 1)
         for i in range(0, self.dim):
-            res[i] = self.func[i].eval(env)
+            res[i] = self.func[i].eval(**env)
         return res
 
     def autodiff(self, var:str, **kwargs):
@@ -45,7 +46,7 @@ class Function():
         for var in self.vars:
             env[var] = kwargs.get(var, 1)
         for i in range(0, self.dim):
-            res[i] = self.func[i].autodiff(var, env)
+            res[i] = self.func[i].autodiff(var, **env)
         return res    
 
     def jacobian(self, **kwargs):
@@ -64,7 +65,7 @@ class Function():
         jac = np.zeros((self.dim, len(self.vars)), dtype="float32")
         for i in range(0, self.dim):
             for j in range(0, len(self.vars)):
-                jac[i,j] = self.func[i].autodiff(self.vars[j], env)
+                jac[i,j] = self.func[i].autodiff(self.vars[j], **env)
         return jac
 
     def variance(self, covmat, pos):
@@ -113,7 +114,7 @@ class Function():
     def __setitem__(self, key, value):
         if key < 0 or key > self.dim:
             raise ValueError("index out of range")
-        for var in value.vars():
+        for var in get_vars(value):
             if var not in self.vars:
                 raise ValueError("variale mismatch")
         self.func[key] = value
