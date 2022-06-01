@@ -1,4 +1,4 @@
-from autodiff import Variable
+from autodiff import variable
 from autodiff.utils import get_vars
 import numpy as np
 import math
