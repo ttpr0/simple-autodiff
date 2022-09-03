@@ -609,8 +609,9 @@ class Matmul(Operation):
 
     @staticmethod
     def _backward(gradient, input):
-        v = (input[0].value - input[1].value) * 2
-        return (gradient*v/v.size,-gradient*v/v.size)
+        # v = (input[0].value - input[1].value) * 2
+        # return (gradient*v/v.size,-gradient*v/v.size)
+        return (np.matmul(gradient, input[1].value.T), np.matmul(input[0].value.T, gradient))
 
     @staticmethod
     def _str(input):
