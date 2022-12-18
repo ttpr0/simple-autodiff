@@ -1,27 +1,60 @@
 from autodiff.array import Array
 from abc import abstractmethod
 import numpy as np
+import cv2
 
 class Operation():
 
     @classmethod
     def apply(cls, *input):
-        cls._validate_input(input)
-        value = cls._eval(input)
+        """
+        applies a operation on given input
+        
+        Args:
+            input: input arguments (usually Arrays)
+        
+        Returns:
+            the computed output Array
+        """
+        input_ = tuple(item.value if type(item) == Array else item for item in input)
+        cls._validate_input(input_)
+        value, params = cls._eval(input_)
         if any(i.track_grads for i in input):
-            input = tuple(input)
-            return Array(input=input, value=value, operation=cls)
+            arr = Array(value, track_grads=True)
+            arr.operation = cls
+            arr.input = tuple(input)
+            arr.params = params
+            return arr
         else:
             return Array(value, track_grads=False)
 
     @staticmethod
     @abstractmethod
     def _validate_input(input):
+        """
+        validates the input arguments for the operation
+        
+        Args:
+            input: input arguments to operation (Arrays are given as their underlying numpy array)
+        
+        Throws:
+            on invalid input
+        """
         pass
 
     @staticmethod
     @abstractmethod
     def _eval(input):
+        """
+        evaluates operation for given input
+        
+        Args:
+            input: operation input (Arrays are given as their underlying numpy array)
+        
+        Returns:
+            result: the operation result as a numpy array
+            params: a object containing parameters to be used in backward pass
+        """
         pass
 
     @staticmethod
@@ -36,7 +69,18 @@ class Operation():
 
     @staticmethod
     @abstractmethod
-    def _backward(gradient, input):
+    def _backward(gradient, input, params):
+        """
+        computes backward pass for operation with respect to inputs
+        
+        Args:
+            gradient: numpy array containing radient for current Array
+            input: operation input (Arrays are given as their underlying numpy array)
+            params: parameter object returned from _eval method
+        
+        Returns:
+            a tuple containing gradient with respect to every input as numpy arrays
+        """
         pass
 
     @staticmethod
@@ -53,12 +97,12 @@ class Operation():
 class Add(Operation):
     @staticmethod
     def _validate_input(input):
-        if input[0].dimension != input[1].dimension:
+        if input[0].shape != input[1].shape:
             raise ValueError("dimensions do not match")
 
     @staticmethod
     def _eval(input):
-        return input[0].value + input[1].value
+        return input[0] + input[1], None
 
     @staticmethod
     def _diff(input, gradient):
@@ -71,7 +115,7 @@ class Add(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
+    def _backward(gradient, input, params):
         return (gradient,gradient)
 
     @staticmethod
@@ -86,12 +130,12 @@ class Add(Operation):
 class Sub(Operation):
     @staticmethod
     def _validate_input(input):
-        if input[0].dimension != input[1].dimension:
+        if input[0].shape != input[1].shape:
             raise ValueError("dimensions do not match")
 
     @staticmethod
     def _eval(input):
-        return input[0].value - input[1].value
+        return input[0] - input[1], None
 
     @staticmethod
     def _diff(input, gradient):
@@ -104,7 +148,7 @@ class Sub(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
+    def _backward(gradient, input, params):
         return (gradient,-gradient)
 
     @staticmethod
@@ -119,12 +163,12 @@ class Sub(Operation):
 class Multiply(Operation):
     @staticmethod
     def _validate_input(input):
-        if input[0].dimension != input[1].dimension:
+        if input[0].shape != input[1].shape:
             raise ValueError("dimensions do not match")
 
     @staticmethod
     def _eval(input):
-        return input[0].value * input[1].value
+        return input[0] * input[1], None
 
     @staticmethod
     def _diff(input, gradient):
@@ -145,8 +189,8 @@ class Multiply(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        return (gradient*input[1].value,gradient*input[0].value)
+    def _backward(gradient, input, params):
+        return (gradient*input[1],gradient*input[0])
 
     @staticmethod
     def _str(input):
@@ -172,15 +216,16 @@ class Multiply(Operation):
             r = f"{input[1]._latex()}"
         return f"{l}*{r}" 
 
+
 class Divide(Operation):
     @staticmethod
     def _validate_input(input):
-        if input[0].dimension != input[1].dimension:
+        if input[0].shape != input[1].shape:
             raise ValueError("dimensions do not match")
 
     @staticmethod
     def _eval(input):
-        return input[0].value / input[1].value
+        return input[0] / input[1], None
 
     @staticmethod
     def _diff(input, gradient):
@@ -201,8 +246,8 @@ class Divide(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        return (gradient/input[1].value,-gradient*input[0].value/input[1].value**2)
+    def _backward(gradient, input, params):
+        return (gradient/input[1],-gradient*input[0]/input[1]**2)
 
     @staticmethod
     def _str(input):
@@ -220,15 +265,16 @@ class Divide(Operation):
     def _latex(input):
         return r"\frac{"+input[0]._latex()+"}{"+input[1]._latex()+"}"
 
+
 class Pow(Operation):
     @staticmethod
     def _validate_input(input):
-        if input[0].dimension != input[1].dimension:
+        if input[0].shape != input[1].shape:
             raise ValueError("dimensions do not match")
 
     @staticmethod
     def _eval(input):
-        return input[0].value ** input[1].value
+        return input[0] ** input[1], None
 
     @staticmethod
     def _diff(input, gradient):
@@ -257,9 +303,9 @@ class Pow(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        db = input[1].value * input[0].value**(input[1].value-1)
-        de = np.log(input[0].value) * input[0].value**input[1].value
+    def _backward(gradient, input, params):
+        db = input[1] * input[0]**(input[1]-1)
+        de = np.log(input[0]) * input[0]**input[1]
         return (gradient*db,gradient*de)
 
     @staticmethod
@@ -278,6 +324,7 @@ class Pow(Operation):
             b = f"({input[0]._latex()})"
         return f"{b}^"+"{"+input[1]._latex()+"}"
 
+
 class Ln(Operation):
     @staticmethod
     def _validate_input(input):
@@ -285,7 +332,7 @@ class Ln(Operation):
 
     @staticmethod
     def _eval(input):
-        return np.log(input[0].value)
+        return np.log(input[0]), None
 
     @staticmethod
     def _diff(input, gradient):
@@ -302,8 +349,8 @@ class Ln(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        return (gradient/input[0].value,)
+    def _backward(gradient, input, params):
+        return (gradient/input[0],)
 
     @staticmethod
     def _str(input):
@@ -313,17 +360,18 @@ class Ln(Operation):
     def _latex(input):
         return r"ln("+input[0]._latex()+")"
 
+
 class Expand(Operation):
     @staticmethod
     def _validate_input(input):
-        if input[0].dimension != (1,):
+        if input[0].shape != (1,):
             raise ValueError("only scalar can be expanded")
         if type(input[1]) != tuple:
             raise ValueError("dimension not valid")
 
     @staticmethod
     def _eval(input):
-        return np.full(input[1], input[0].value)
+        return np.full(input[1], input[0]), None
 
     @staticmethod
     def _diff(input, gradient):
@@ -334,7 +382,7 @@ class Expand(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
+    def _backward(gradient, input, params):
         return (np.array(np.sum(gradient)),)
 
     @staticmethod
@@ -345,11 +393,6 @@ class Expand(Operation):
     def _latex(input):
         return f"{input[0]._latex()}"
 
-def ln(child:Array):
-    return Ln.apply(child)
-
-def expand(child:Array, dimension:tuple):
-    return Expand.apply(child, dimension)
 
 class Exp(Operation):
     @staticmethod
@@ -358,7 +401,7 @@ class Exp(Operation):
 
     @staticmethod
     def _eval(input):
-        return np.exp(input[0].value)
+        return np.exp(input[0]), None
 
     @staticmethod
     def _diff(inpit, gradient):
@@ -375,8 +418,8 @@ class Exp(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        return (gradient*np.exp(input[0].value),)
+    def _backward(gradient, input, params):
+        return (gradient*np.exp(input[0]),)
 
     @staticmethod
     def _str(input):
@@ -386,6 +429,7 @@ class Exp(Operation):
     def _latex(input):
         return r"\exp("+input[0]._latex()+")"
 
+
 class Sin(Operation):
     @staticmethod
     def _validate_input(input):
@@ -393,7 +437,7 @@ class Sin(Operation):
 
     @staticmethod
     def _eval(input):
-        return np.sin(input[0].value)
+        return np.sin(input[0]), None
 
     @staticmethod
     def _diff(input, gradient):
@@ -410,8 +454,8 @@ class Sin(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        return (gradient*np.cos(input[0].value),)
+    def _backward(gradient, input, params):
+        return (gradient*np.cos(input[0]),)
 
     @staticmethod
     def _str(input):
@@ -421,6 +465,7 @@ class Sin(Operation):
     def _latex(input):
         return r"sin("+input[0]._latex()+")"
 
+
 class Cos(Operation):
     @staticmethod
     def _validate_input(input):
@@ -428,7 +473,7 @@ class Cos(Operation):
 
     @staticmethod
     def _eval(input):
-        return np.cos(input[0].value)
+        return np.cos(input[0]), None
 
     @staticmethod
     def _diff(input, gradient):
@@ -445,8 +490,8 @@ class Cos(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        return (-gradient*np.sin(input[0].value),)
+    def _backward(gradient, input, params):
+        return (-gradient*np.sin(input[0]),)
 
     @staticmethod
     def _str(input):
@@ -456,6 +501,7 @@ class Cos(Operation):
     def _latex(input):
         return r"cos("+input[0]._latex()+")"
 
+
 class Tan(Operation):
     @staticmethod
     def _validate_input(input):
@@ -463,7 +509,7 @@ class Tan(Operation):
 
     @staticmethod
     def _eval(input):
-        return np.tan(input[0].value)
+        return np.tan(input[0]), None
 
     @staticmethod
     def _diff(input, gradient):
@@ -480,8 +526,8 @@ class Tan(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        return (gradient/np.cos(input[0].value)**2,)
+    def _backward(gradient, input, params):
+        return (gradient/np.cos(input[0])**2,)
 
     @staticmethod
     def _str(input):
@@ -491,17 +537,18 @@ class Tan(Operation):
     def _latex(input):
         return r"tan("+input[0]._latex()+")"
 
+
 class MeanSquaredError(Operation):
     @staticmethod
     def _validate_input(input):
-        if input[0].dimension != input[1].dimension:
-            raise ValueError("target dimension must match output dimesion")
+        if input[0].shape != input[1].shape:
+            raise ValueError("target dimension must match output dimension")
         return
 
     @staticmethod
     def _eval(input):
-        v = (input[0].value - input[1].value)**2
-        return np.array([np.sum(v)/v.size])
+        v = (input[0] - input[1])**2
+        return np.array([np.sum(v)/v.size]), None
 
     @staticmethod
     def _diff(input, gradient):
@@ -512,8 +559,8 @@ class MeanSquaredError(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        v = (input[0].value - input[1].value) * 2
+    def _backward(gradient, input, params):
+        v = (input[0] - input[1]) * 2
         return (gradient*v/v.size,-gradient*v/v.size)
 
     @staticmethod
@@ -524,6 +571,7 @@ class MeanSquaredError(Operation):
     def _latex(input):
         return r"error("+input[0]._latex()+")"
 
+
 class Transpose(Operation):
     @staticmethod
     def _validate_input(input):
@@ -531,7 +579,7 @@ class Transpose(Operation):
 
     @staticmethod
     def _eval(input):
-        return np.transpose(input[0].value)
+        return np.transpose(input[0]), None
 
     @staticmethod
     def _diff(input):
@@ -542,7 +590,7 @@ class Transpose(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
+    def _backward(gradient, input, params):
         return (np.transpose(gradient),)
 
     @staticmethod
@@ -553,16 +601,17 @@ class Transpose(Operation):
     def _latex(input):
         return r""+input[0]._latex()+"^T"
 
+
 class Inv(Operation):
     @staticmethod
     def _validate_input(input):
-        if len(input[0].dimension) != 2 or input[0].dimension[0] != input[0].dimension[1]:
+        if len(input[0].shape) < 2 or input[0].shape[-1] != input[0].shape[-2]:
             raise ValueError("inv only allowed for quadratic matricies")
         return
 
     @staticmethod
     def _eval(input):
-        return np.linalg.inv(input[0].value)
+        return np.linalg.inv(input[0]), None
 
     @staticmethod
     def _diff(input, gradient):
@@ -573,9 +622,11 @@ class Inv(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        inv = np.linalg.inv(input[0].value)
-        v = -np.matmul(np.transpose(inv), inv)
+    def _backward(gradient, input, params):
+        inv = np.linalg.inv(input[0])
+        *a, b, c = tuple(i for i in range(len(input[0].shape)))
+        t = np.transpose(inv, (*a,c,b))
+        v = -np.matmul(t, inv)
         return (np.matmul(gradient, v),)
 
     @staticmethod
@@ -586,18 +637,19 @@ class Inv(Operation):
     def _latex(input):
         return r""+input[0]._latex()+"^-1"
 
+
 class Matmul(Operation):
     @staticmethod
     def _validate_input(input):
-        if len(input[0].dimension) != 2 or len(input[1].dimension) != 2:
+        if len(input[0].shape) < 2 or len(input[1].shape) < 2:
             raise ValueError("matmul only for 2d matricies")
-        if input[0].dimension[1] != input[1].dimension[0]:
-            raise ValueError("dimesion error")  
+        if input[0].shape[-2] != input[1].shape[-1]:
+            raise ValueError("dimesion error")
         return
 
     @staticmethod
     def _eval(input):
-        return np.matmul(input[0].value, input[1].value)
+        return np.matmul(input[0], input[1]), None
 
     @staticmethod
     def _diff(input, gradient):
@@ -608,10 +660,12 @@ class Matmul(Operation):
         pass
 
     @staticmethod
-    def _backward(gradient, input):
-        # v = (input[0].value - input[1].value) * 2
-        # return (gradient*v/v.size,-gradient*v/v.size)
-        return (np.matmul(gradient, input[1].value.T), np.matmul(input[0].value.T, gradient))
+    def _backward(gradient, input, params):
+        *a, b, c = tuple(i for i in range(len(input[0].shape)))
+        in0_t = np.transpose(input[0], (*a,c,b))
+        *a, b, c = tuple(i for i in range(len(input[1].shape)))
+        in1_t = np.transpose(input[1], (*a,c,b))
+        return (np.matmul(gradient, in1_t), np.matmul(in0_t, gradient))
 
     @staticmethod
     def _str(input):
@@ -620,6 +674,13 @@ class Matmul(Operation):
     @staticmethod
     def _latex(input):
         return r""+input[0]._latex()+"x"+input[1]._latex()
+
+
+def ln(child:Array):
+    return Ln.apply(child)
+
+def expand(child:Array, dimension:tuple):
+    return Expand.apply(child, dimension)
 
 def exp(child:Array):
     return Exp.apply(child)

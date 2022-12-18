@@ -2,16 +2,20 @@ from abc import abstractmethod
 import numpy as np
 
 class Array():
-    def __init__(self, value, dtype = 'float32', input:tuple = None, operation = None, track_grads:bool = True, name:str = None):
-        from autodiff.operations import Operation
+    def __init__(self, value, dtype = 'float32', track_grads:bool = False, name:str = None):
+        # underlying numpy arrays
         self._value:np.ndarray = np.array(value, ndmin=1).astype(dtype)
         self._gradient:np.ndarray = None
-        self.dimension:tuple = self._value.shape
-        self.dtype = self._value.dtype
-        self.input:tuple = input
-        self.operation:Operation = operation
-        self.track_grads:bool = track_grads
+
+        # array attributes
         self.name:str = name
+        self.track_grads:bool = track_grads
+
+        # computation graph elements
+        from autodiff.operations import Operation
+        self.operation:Operation = None
+        self.input:tuple = None
+        self.params:tuple = None
 
     def get_value(self) -> np.ndarray:
         return self._value
@@ -20,7 +24,7 @@ class Array():
         v = np.array(value, ndmin=1)
         if not np.issubdtype(v.dtype, np.number):
             raise ValueError("value has to be numeric")
-        if self.dimension != v.shape:
+        if self.shape != v.shape:
             raise ValueError("value shape must match dimension of Expr")
         self._value = v.astype(self.dtype)
 
@@ -33,11 +37,21 @@ class Array():
         g = np.array(gradient, ndmin=1)
         if not np.issubdtype(g.dtype, np.number):
             raise ValueError("value has to be numeric")
-        if self.dimension != g.shape:
+        if self.shape != g.shape:
             raise ValueError("gradient shape must match dimension of Expr")
         self._gradient = g.astype(self.dtype)
 
     gradient:np.ndarray = property(get_gradient, set_gradient)
+
+    def get_shape(self) -> tuple:
+        return self._value.shape
+
+    shape:tuple = property(get_shape)
+
+    def get_dtype(self) -> tuple:
+        return self._value.dtype
+
+    dtype = property(get_dtype)
 
     def __getitem__(self, key):
         arr = self.value[key]
@@ -46,7 +60,10 @@ class Array():
         return self.value[key]
 
     def __setitem__(self, key, item):
-        self.value[key] = item
+        if type(item) == Array:
+            self.value[key] = item.value
+        else:
+            self.value[key] = item
 
     def __delitem__(self, key):
         del self.value[key]
@@ -55,8 +72,8 @@ class Array():
         """
         evaluate at given environment
         
-        param:
-            env : environment, e.g. x=1, y=2
+        Args:
+            env: environment, e.g. x=1, y=2
         """
         def iter(node:Array):
             if type(node) != Array:
@@ -64,7 +81,8 @@ class Array():
             for input in (node.input or []):
                 iter(input)
             if node.operation != None:
-                node.value = node.operation._eval(node.input)
+                input = tuple(item.value if type(item) == Array else item for item in node.input)
+                node.value, node.params = node.operation._eval(input)
             elif node.name == None:
                 return
             elif node.name in env:
@@ -76,10 +94,10 @@ class Array():
         """
         symbolic differentiation for given variable
         
-        param:
+        Args:
             var : variable-name, e.g. "x"
         
-        return:
+        Returns:
             differentiation result as top level node
         """
         pass
@@ -89,11 +107,11 @@ class Array():
         """
         calculates gradient for var at given envirnment, both evaluates expr and calculates diff using forward mode     
 
-        param:
+        Args:
             env : environment dictionary, e.g. x=1, y=2
             var : variable-name to calculate derivative for, e.g. "x"
         
-        return:
+        Returns:
             gradiant-value
         """
         pass
@@ -105,10 +123,10 @@ class Array():
 
         -> only works after eval has been calculated or rigth after graph creation
         
-        param:
+        Args:
             var : variable-name to calculate derivative for, e.g. "x"
         
-        return:
+        Returns:
             gradiant w.r.t. given variable
         """
         pass
@@ -120,8 +138,8 @@ class Array():
         -> gradient can be found on leaf nodes using expr.gradient \n
         -> only works after eval has been calculated or rigth after graph creation
         """
-        if self.dimension == (1,):
-            self.gradient = np.ones(self.dimension)
+        if self.shape == (1,):
+            self.gradient = np.ones(self.shape)
         else:
             self.gradient = gradient
 
@@ -130,13 +148,14 @@ class Array():
                 return
             if node.operation == None:
                 return
-            grads = node.operation._backward(node.gradient, node.input)
+            input = tuple(item.value if type(item) == Array else item for item in node.input)
+            grads = node.operation._backward(node.gradient, input, node.params)
             for i in range(0, len(node.input)):
                 if type(node.input[i]) != Array:
                     continue
                 elif node.input[i].operation == None:
                     if node.input[i].gradient == None:
-                        node.input[i].gradient = np.zeros(node.input[i].dimension)
+                        node.input[i].gradient = np.zeros(node.input[i].shape)
                     node.input[i].gradient += grads[i]
                 else:
                     node.input[i].gradient = grads[i]
@@ -144,121 +163,52 @@ class Array():
         iter(self)
 
     def __add__(self, p):
-        from autodiff.operations import Expand, Add
-        a = self
-        b = to_array(p)
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Add.apply(a,b)
+        from autodiff.operations import Add
+        return Add.apply(self,p)
     
     def __radd__(self, p):
-        from autodiff.operations import Expand, Add
-        a = to_array(p)
-        b = self
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Add.apply(a,b)
+        from autodiff.operations import Add
+        return Add.apply(p,self)
 
     def __sub__(self, p):
-        from autodiff.operations import Expand, Sub
-        a = self
-        b = to_array(p)
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Sub.apply(a,b)
+        from autodiff.operations import Sub
+        return Sub.apply(self,p)
 
     def __rsub__(self, p):
-        from autodiff.operations import Expand, Sub
-        a = to_array(p)
-        b = self
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Sub.apply(a,b)
+        from autodiff.operations import Sub
+        return Sub.apply(p,self)
 
     def __mul__(self, p):
-        from autodiff.operations import Expand, Multiply
-        a = self
-        b = to_array(p)
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Multiply.apply(a,b)
+        from autodiff.operations import Multiply
+        return Multiply.apply(self,p)
     
     def __rmul__(self, p):
-        from autodiff.operations import Expand, Multiply
-        a = to_array(p)
-        b = self
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Multiply.apply(a,b)
+        from autodiff.operations import Multiply
+        return Multiply.apply(p,self)
 
     def __truediv__(self, p):
-        from autodiff.operations import Expand, Divide
-        a = self
-        b = to_array(p)
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Divide.apply(a,b)
+        from autodiff.operations import Divide
+        return Divide.apply(self,p)
     
     def __rtruediv__(self, p):
-        from autodiff.operations import Expand, Divide
-        a = to_array(p)
-        b = self
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Divide.apply(a,b)
+        from autodiff.operations import Divide
+        return Divide.apply(p,self)
     
     def __pow__(self, p):
-        from autodiff.operations import Expand, Pow
-        a = self
-        b = to_array(p)
-        if a.dimension != b.dimension:
-            if b.dimension == (1,):
-                b = Expand.apply(b, a.dimension)
-            elif a.dimension == (1,):
-                a = Expand.apply(a, b.dimension)
-            else:
-                raise ValueError("can not add Expr of different dimension")
-        return Pow.apply(a,b)
+        from autodiff.operations import Pow
+        return Pow.apply(self,p)
+
+    def __matmul__(self, p):
+        from autodiff.operations import Matmul
+        return Matmul.apply(self,p)
+
+    def __rmatmul__(self, p):
+        from autodiff.operations import Matmul
+        return Matmul.apply(p,self)
+
+    def T(self):
+        from autodiff.operations import Transpose
+        return Transpose.apply(self)
 
     def __str__(self):
         return self.value.__str__()
@@ -282,6 +232,8 @@ class Array():
     def tree(self):
         return Tree(self)
 
+def from_numpy(arr:np.ndarray) -> Array:
+    return Array(arr, dtype=arr.dtype)
 
 class Tree():
     def __init__(self, expr:Array):
@@ -292,9 +244,3 @@ class Tree():
 
     def _repr_latex_(self):
         return self.expr._latex()
-
-def to_array(value):
-    if type(value) != Array:
-        return Array(value, track_grads=True)
-    else:
-        return value
