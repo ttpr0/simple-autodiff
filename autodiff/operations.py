@@ -30,12 +30,15 @@ class Operation():
         input_ = tuple(item.value if type(item) == Array else item for item in input)
         cls._validate_input(input_)
         value, params = cls._eval(input_)
-        if any(i.track_grads for i in input if type(i) == Array) and TRACK_COMP:
-            arr = Array(value, track_grads=True)
-            arr.operation = cls
-            arr.input = tuple(input)
-            arr.params = params
-            return arr
+        if any(i.track_grads for i in input if type(i) == Array):
+            if TRACK_COMP:
+                arr = Array(value, track_grads=True)
+                arr.operation = cls
+                arr.input = tuple(input)
+                arr.params = params
+                return arr
+            else:
+                return Array(value, track_grads=True)
         else:
             return Array(value, track_grads=False)
 
