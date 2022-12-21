@@ -2,9 +2,15 @@ from abc import abstractmethod
 import numpy as np
 
 class Array():
-    def __init__(self, value, dtype = 'float32', track_grads:bool = False, name:str = None):
+    def __init__(self, value, dtype = None, track_grads:bool = False, name:str = None):
         # underlying numpy arrays
-        self._value:np.ndarray = np.array(value, ndmin=1).astype(dtype)
+        if dtype != None:
+            self._value:np.ndarray = np.array(value, ndmin=1).astype(dtype)
+        else:
+            arr = np.array(value, ndmin=1)
+            if not np.issubdtype(arr.dtype, np.number):
+                raise ValueError("invalid dtype on value")
+            self._value = arr
         self._gradient:np.ndarray = None
 
         # array attributes
@@ -146,15 +152,17 @@ class Array():
         def iter(node:Array):
             if type(node) != Array:
                 return
-            if node.operation == None:
+            if node.operation is None:
                 return
             input = tuple(item.value if type(item) == Array else item for item in node.input)
             grads = node.operation._backward(node.gradient, input, node.params)
             for i in range(0, len(node.input)):
                 if type(node.input[i]) != Array:
                     continue
-                elif node.input[i].operation == None:
-                    if node.input[i].gradient == None:
+                if node.input[i].track_grads == False:
+                    continue
+                elif node.input[i].operation is None:
+                    if node.input[i].gradient is None:
                         node.input[i].gradient = np.zeros(node.input[i].shape)
                     node.input[i].gradient += grads[i]
                 else:
@@ -232,8 +240,8 @@ class Array():
     def tree(self):
         return Tree(self)
 
-def from_numpy(arr:np.ndarray) -> Array:
-    return Array(arr, dtype=arr.dtype)
+def from_numpy(arr:np.ndarray, track_grads=False) -> Array:
+    return Array(arr, dtype=arr.dtype, track_grads=track_grads)
 
 class Tree():
     def __init__(self, expr:Array):

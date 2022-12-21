@@ -10,7 +10,8 @@ def get_vars(func:array.Array):
 def reset_grads(expr:array.Array):
     expr._gradient = None
     for node in (expr.input or []):
-        reset_grads(node)
+        if type(node) == array.Array:
+            reset_grads(node)
 
 def apply_grads(expr:array.Array, lr:float=0.01):
     if expr.operation == None and expr.track_grads:
