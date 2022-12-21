@@ -1,7 +1,18 @@
 from autodiff.array import Array
 from abc import abstractmethod
 import numpy as np
-import cv2
+
+TRACK_COMP = False
+
+class track_computation:
+    def __init__(self):
+        pass
+    def __enter__(self):
+        global TRACK_COMP
+        TRACK_COMP = True
+    def __exit__(self, type, value, traceback):
+        global TRACK_COMP
+        TRACK_COMP = False
 
 class Operation():
 
@@ -19,7 +30,7 @@ class Operation():
         input_ = tuple(item.value if type(item) == Array else item for item in input)
         cls._validate_input(input_)
         value, params = cls._eval(input_)
-        if any(i.track_grads for i in input):
+        if any(i.track_grads for i in input if type(i) == Array) and TRACK_COMP:
             arr = Array(value, track_grads=True)
             arr.operation = cls
             arr.input = tuple(input)
