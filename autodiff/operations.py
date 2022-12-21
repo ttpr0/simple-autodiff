@@ -723,6 +723,63 @@ class Reshape(Operation):
         return f"{input[0]._latex()}"
 
 
+class Conv2D(Operation):
+    @staticmethod
+    def _validate_input(input):
+        if len(input[0].shape) == 3 and len(input[1].shape) == 4:
+            if input[0].shape[0] <= input[1].shape[1] or input[0].shape[1] <= input[1].shape[2]:
+                raise ValueError("in1 must be larger than in2")
+            if input[0].shape[2] != input[1].shape[3]:
+                raise ValueError("invalid input dimensions")
+        else:
+            raise ValueError("invalid input dimensions")
+
+        if input[1].shape[1] % 2 != 1 or input[1].shape[2] % 2 != 1:
+            raise ValueError("filter has to have an odd dimension")
+        return
+
+    @staticmethod
+    def _eval(input):
+        in_arr = input[0]
+        in_kern = input[1]
+        out_arr = np.zeros((in_arr.shape[0]-in_kern.shape[1]+1, in_arr.shape[1]-in_kern.shape[1]+1, in_kern.shape[0]))
+        for i in range(0, out_arr.shape[2]):
+            for j in range(0, in_arr.shape[2]):
+                out_arr[:,:,i] += _conv2D(in_arr[:,:,j], in_kern[i,:,:,j])
+        return out_arr, None
+
+    @staticmethod
+    def _diff(input, gradient):
+        pass
+
+    @staticmethod
+    def _forward(input):
+        pass
+
+    @staticmethod
+    def _backward(gradient, input, params):
+        in_arr = input[0]
+        in_kern = input[1]
+        kern_grad = np.zeros(in_kern.shape, dtype=np.float32)
+        arr_grad = np.zeros(in_arr.shape, dtype=np.float32)
+        for i in range(0, gradient.shape[2]):
+            for j in range(0, arr_grad.shape[2]):
+                # kernel gradient
+                kern_grad[i,:,:,j] = _conv2D(in_arr[:,:,j], gradient[:,:,i])
+                # array gradient
+                kern_rot = np.rot90(in_kern[i,:,:,j], 2)
+                arr_grad[:,:,j] += _conv2D_full(gradient[:,:,i], kern_rot)
+        return (arr_grad, kern_grad)
+
+    @staticmethod
+    def _str(input):
+        return f"conv2d({input[0]._str()})"
+
+    @staticmethod
+    def _latex(input):
+        return r"conv2d("+input[0]._latex()+")"
+
+
 def ln(child:Array):
     return Ln.apply(child)
 
@@ -755,3 +812,35 @@ def mean_squared_error(output:Array, target:Array):
 
 def reshape(child:Array, new_shape:tuple):
     return Reshape.apply(child, new_shape)
+
+def conv2D(arr:Array, kernel:Array):
+    return Conv2D.apply(arr, kernel)
+
+
+def _conv2D(arr:np.ndarray, kern:np.ndarray):
+    res_shape = (arr.shape[0]-kern.shape[0]+1, arr.shape[1]-kern.shape[1]+1)
+    res_arr = np.zeros(res_shape)
+    for i in range(0, res_shape[0]):
+            for j in range(0, res_shape[1]):
+                res_arr[i,j] = np.sum(arr[i:kern.shape[0]+i,j:kern.shape[1]+j]*kern)
+    return res_arr
+
+def _conv2D_full(arr:np.ndarray, kern:np.ndarray):
+    pad_0 = kern.shape[0]-1
+    pad_1 = kern.shape[1]-1
+    res_shape = (arr.shape[0]+pad_0, arr.shape[1]+pad_1)
+    res_arr = np.zeros(res_shape)
+    for i in range(0, res_shape[0]):
+            for j in range(0, res_shape[1]):
+                kern_0_min = max(0, pad_0-i)
+                kern_1_min = max(0, pad_1-j)
+                kern_0_max = min(pad_0+1, res_shape[0]-i)
+                kern_1_max = min(pad_1+1, res_shape[1]-j)
+                kern_part = kern[kern_0_min:kern_0_max, kern_1_min:kern_1_max]
+                arr_0_min = max(0, i-pad_0)
+                arr_1_min = max(0, j-pad_1)
+                arr_0_max = min(arr.shape[0], i+1)
+                arr_1_max = min(arr.shape[1], j+1)
+                arr_part = arr[arr_0_min:arr_0_max, arr_1_min:arr_1_max]
+                res_arr[i,j] = np.sum(arr_part*kern_part)
+    return res_arr
