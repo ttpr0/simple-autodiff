@@ -690,6 +690,39 @@ class Matmul(Operation):
         return r""+input[0]._latex()+"x"+input[1]._latex()
 
 
+class Reshape(Operation):
+    @staticmethod
+    def _validate_input(input):
+        if type(input[0]) != np.ndarray:
+            raise ValueError("only Arrays can be reshaped")
+        if type(input[1]) != tuple:
+            raise ValueError("dimension not valid")
+
+    @staticmethod
+    def _eval(input):
+        return np.reshape(input[0], input[1]), input[0].shape
+
+    @staticmethod
+    def _diff(input, gradient):
+        pass
+
+    @staticmethod
+    def _forward(input):
+        pass
+
+    @staticmethod
+    def _backward(gradient, input, params):
+        return (np.reshape(gradient, params),)
+
+    @staticmethod
+    def _str(input):
+        return f"{input[0]._str()}"
+    
+    @staticmethod
+    def _latex(input):
+        return f"{input[0]._latex()}"
+
+
 def ln(child:Array):
     return Ln.apply(child)
 
@@ -719,3 +752,6 @@ def matmul(left:Array, right:Array):
 
 def mean_squared_error(output:Array, target:Array):
     return MeanSquaredError.apply(output, target)
+
+def reshape(child:Array, new_shape:tuple):
+    return Reshape.apply(child, new_shape)
