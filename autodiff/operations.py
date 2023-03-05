@@ -657,7 +657,7 @@ class Matmul(Operation):
     def _validate_input(input):
         if len(input[0].shape) < 2 or len(input[1].shape) < 2:
             raise ValueError("matmul only for 2d matricies")
-        if input[0].shape[-2] != input[1].shape[-1]:
+        if input[0].shape[-1] != input[1].shape[-2]:
             raise ValueError("dimesion error")
         return
 
