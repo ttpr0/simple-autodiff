@@ -778,6 +778,145 @@ class Conv2D(Operation):
     @staticmethod
     def _latex(input):
         return r"conv2d("+input[0]._latex()+")"
+    
+
+class Sigmoid(Operation):
+    @staticmethod
+    def _validate_input(input):
+        return
+
+    @staticmethod
+    def _eval(input):
+        in_arr = input[0]
+        out = 1/(1+np.exp(-1*in_arr))
+        return out, out
+
+    @staticmethod
+    def _diff(input, gradient):
+        pass
+
+    @staticmethod
+    def _forward(input):
+        pass
+
+    @staticmethod
+    def _backward(gradient, input, params):
+        out = params
+        return (out*(1-out) * gradient,)
+
+    @staticmethod
+    def _str(input):
+        return f"sigmoid({input[0]._str()})"
+
+    @staticmethod
+    def _latex(input):
+        return r"sigmoid("+input[0]._latex()+")"
+    
+
+class Softmax(Operation):
+    @staticmethod
+    def _validate_input(input):
+        shp = input[0].shape
+        if len(shp) > 2:
+            raise ValueError("invalid input dimensions")
+        elif len(shp) == 2 and shp[1] != 1 and shp[0] != 1:
+            raise ValueError("invalid input dimensions")
+        else:
+            return
+
+    @staticmethod
+    def _eval(input):
+        in_arr = input[0]
+        exp = np.exp(in_arr-np.max(in_arr))
+        out = exp / np.sum(exp)
+        return out, out
+
+    @staticmethod
+    def _diff(input, gradient):
+        pass
+
+    @staticmethod
+    def _forward(input):
+        pass
+
+    @staticmethod
+    def _backward(gradient, input, params):
+        out = params
+        return (out*(1-out) * gradient,)
+
+    @staticmethod
+    def _str(input):
+        return f"softmax({input[0]._str()})"
+
+    @staticmethod
+    def _latex(input):
+        return r"softmax("+input[0]._latex()+")"
+    
+
+class Mean(Operation):
+    @staticmethod
+    def _validate_input(input):
+        return
+
+    @staticmethod
+    def _eval(input):
+        in_arr = input[0]
+        N = in_arr.size
+        return np.sum(in_arr) / N, N
+
+    @staticmethod
+    def _diff(input, gradient):
+        pass
+
+    @staticmethod
+    def _forward(input):
+        pass
+
+    @staticmethod
+    def _backward(gradient, input, params):
+        in_arr = input[0]
+        N = params
+        return (np.full(in_arr.shape, gradient) / N,)
+
+    @staticmethod
+    def _str(input):
+        return f"mean({input[0]._str()})"
+
+    @staticmethod
+    def _latex(input):
+        return r"\mean{("+input[0]._latex()+r")}"
+    
+
+class Sum(Operation):
+    @staticmethod
+    def _validate_input(input):
+        return
+
+    @staticmethod
+    def _eval(input):
+        in_arr = input[0]
+        return np.sum(in_arr), None
+
+    @staticmethod
+    def _diff(input, gradient):
+        pass
+
+    @staticmethod
+    def _forward(input):
+        pass
+
+    @staticmethod
+    def _backward(gradient, input, params):
+        in_arr = input[0]
+        return (np.full(in_arr.shape, gradient),)
+
+    @staticmethod
+    def _str(input):
+        return f"sum({input[0]._str()})"
+
+    @staticmethod
+    def _latex(input):
+        return r"\sum{("+input[0]._latex()+r")}"
 
 
 def ln(child:Array):
@@ -815,6 +954,18 @@ def reshape(child:Array, new_shape:tuple):
 
 def conv2D(arr:Array, kernel:Array):
     return Conv2D.apply(arr, kernel)
+
+def sigmoid(arr: Array) -> Array:
+    return Sigmoid.apply(arr)
+
+def softmax(arr: Array) -> Array:
+    return Softmax.apply(arr)
+
+def mean(arr: Array) -> Array:
+    return Mean.apply(arr)
+
+def sum(arr: Array) -> Array:
+    return Sum.apply(arr)
 
 
 def _conv2D(arr:np.ndarray, kern:np.ndarray):
