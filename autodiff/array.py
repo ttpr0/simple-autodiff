@@ -171,40 +171,94 @@ class Array():
         iter(self)
 
     def __add__(self, p):
-        from autodiff.operations import Add
-        return Add.apply(self,p)
+        from autodiff.operations import Add, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Add.apply(self, Expand.apply(p, self.shape))
+        if self.shape == (1,):
+            return Add.apply(Expand.apply(self, p.shape), p)
+        return Add.apply(self, p)
     
     def __radd__(self, p):
-        from autodiff.operations import Add
-        return Add.apply(p,self)
+        from autodiff.operations import Add, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Add.apply(Expand.apply(p, self.shape), self)
+        if self.shape == (1,):
+            return Add.apply(p, Expand.apply(self, p.shape))
+        return Add.apply(p, self)
 
     def __sub__(self, p):
-        from autodiff.operations import Sub
-        return Sub.apply(self,p)
+        from autodiff.operations import Sub, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Sub.apply(self, Expand.apply(p, self.shape))
+        if self.shape == (1,):
+            return Sub.apply(Expand.apply(self, p.shape), p)
+        return Sub.apply(self, p)
 
     def __rsub__(self, p):
-        from autodiff.operations import Sub
-        return Sub.apply(p,self)
+        from autodiff.operations import Sub, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Sub.apply(Expand.apply(p, self.shape), self)
+        if self.shape == (1,):
+            return Sub.apply(p, Expand.apply(self, p.shape))
+        return Sub.apply(p, self)
 
     def __mul__(self, p):
-        from autodiff.operations import Multiply
-        return Multiply.apply(self,p)
+        from autodiff.operations import Multiply, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Multiply.apply(self, Expand.apply(p, self.shape))
+        if self.shape == (1,):
+            return Multiply.apply(Expand.apply(self, p.shape), p)
+        return Multiply.apply(self, p)
     
     def __rmul__(self, p):
-        from autodiff.operations import Multiply
-        return Multiply.apply(p,self)
+        from autodiff.operations import Multiply, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Multiply.apply(Expand.apply(p, self.shape), self)
+        if self.shape == (1,):
+            return Multiply.apply(p, Expand.apply(self, p.shape))
+        return Multiply.apply(p, self)
 
     def __truediv__(self, p):
-        from autodiff.operations import Divide
-        return Divide.apply(self,p)
+        from autodiff.operations import Divide, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Divide.apply(self, Expand.apply(p, self.shape))
+        if self.shape == (1,):
+            return Divide.apply(Expand.apply(self, p.shape), p)
+        return Divide.apply(self, p)
     
     def __rtruediv__(self, p):
-        from autodiff.operations import Divide
-        return Divide.apply(p,self)
+        from autodiff.operations import Divide, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Divide.apply(Expand.apply(p, self.shape), self)
+        if self.shape == (1,):
+            return Divide.apply(p, Expand.apply(self, p.shape))
+        return Divide.apply(p, self)
     
     def __pow__(self, p):
-        from autodiff.operations import Pow
-        return Pow.apply(self,p)
+        from autodiff.operations import Pow, Expand
+        if type(p) == int or type(p) == float:
+            p = Array(p)
+        if p.shape == (1,):
+            return Pow.apply(self, Expand.apply(p, self.shape))
+        if self.shape == (1,):
+            return Pow.apply(Expand.apply(self, p.shape), p)
+        return Pow.apply(self, p)
 
     def __matmul__(self, p):
         from autodiff.operations import Matmul
